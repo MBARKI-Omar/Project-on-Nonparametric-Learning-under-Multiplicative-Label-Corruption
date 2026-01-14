@@ -1,141 +1,129 @@
 """
-data_generation.py
-
-Synthetic data generation for the label corruption project.
-Assumption: Perfect separability (P(Y=1|X) ∈ {0, 1})
+Data generation for label noise estimation project.
+Creates synthetic datasets where we know the true noise function.
 """
 
 import numpy as np
 
 
-def generate_X(n, d=1):
+def eta_function(X):
     """
-    Generate feature matrix X.
+    True noise function: probability of label flip at each point.
     
     Args:
-        n: number of observations
-        d: dimension of feature space
-        
-    Returns:
-        X: array of shape (n, d) ~ N(0, I_d)
-    """
-    # Generate X from standard multivariate normal distribution
-    X = np.random.randn(n, d)
+        X: array of shape (m, d) - feature vectors
     
-    return X
+    Returns:
+        array of shape (m,) - noise rates in [0, 0.5)
+    """
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+    
+    if X.shape[1] == 1:
+        # 1D: varies between 0.05 and 0.35
+        return 0.2 + 0.15 * np.sin(np.pi * X[:, 0])
+    else:
+        # 2D+: adjust coefficients to stay positive
+        # Range: [0.05, 0.35]
+        return 0.2 + 0.08 * np.sin(2 * np.pi * X[:, 0]) + 0.07 * np.cos(2 * np.pi * X[:, 1])
+
+
+def f_function(X):
+    """
+    True regression function: P(Y=1|X).
+    Creates regions where one class dominates.
+    
+    Args:
+        X: array of shape (m, d)
+    
+    Returns:
+        array of shape (m,) - probabilities in [0, 1]
+    """
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
+    
+    if X.shape[1] == 1:
+        # 1D: steep sigmoid creates clear separation
+        z = 10 * (X[:, 0] - 0.5)
+    else:
+        # 2D+: linear boundary with steep transition
+        z = 5 * (X[:, 0] + X[:, 1] - 1.0)
+    
+    return 1.0 / (1.0 + np.exp(-z))
+
+
+def generate_X(m, d):
+    """
+    Generate random feature vectors.
+    
+    Args:
+        m: number of samples
+        d: dimension
+    
+    Returns:
+        X: array of shape (m, d), uniform in [0, 1]^d
+    """
+    return np.random.uniform(0, 1, size=(m, d))
 
 
 def generate_Y(X):
     """
-    Generate true labels Y with perfect separability.
-    
-    Uses random assignment: each observation is randomly assigned to class +1 or -1.
-    
-    Args:
-        X: array of shape (n, d)
-        
-    Returns:
-        Y: array of shape (n,) with values in {-1, 1}
-    """
-    n = X.shape[0]
-    
-    # Randomly assign each observation to class +1 or -1 with probability 0.5 each
-    # This creates a deterministic mapping X -> Y while maintaining balance
-    Y = np.random.choice([-1, 1], size=n)
-    
-    return Y
-
-
-def generate_Z(X, Y, noise_type='linear'):
-    """
-    Generate corrupted labels Z from true labels Y according to the noise model.
-    
-    Corruption model:
-        P(Z = -Y | X, Y) = η(X)  (flip with probability η)
-        P(Z = Y | X, Y) = 1 - η(X)  (keep with probability 1-η)
+    Generate true labels based on f_function.
+    Each label is sampled from Bernoulli(f(X)).
     
     Args:
-        X: array of shape (n, d) - features
-        Y: array of shape (n,) - true labels {-1, 1}
-        noise_type: type of noise function ('linear', 'sine')
-        
+        X: array of shape (m, d)
+    
     Returns:
-        Z: array of shape (n,) - corrupted labels {-1, 1}
-        eta_values: array of shape (n,) - true noise values η(X)
+        Y: array of shape (m,) with values in {-1, +1}
     """
-    # Compute the noise level η(X) for each observation
-    eta_values = eta_function(X, noise_type=noise_type)
+    m = X.shape[0]
+    probs = f_function(X)
     
-    # Generate random uniform numbers in [0, 1] for each observation
-    # This will determine which labels get flipped
-    random_flips = np.random.rand(X.shape[0])
-    
-    # Create a boolean mask: True where we should flip the label
-    # flip_mask[i] = True if random_flips[i] < η(X[i])
-    flip_mask = random_flips < eta_values
-    
-    # Start with Z = Y (copy the true labels)
-    Z = Y.copy()
-    
-    # Flip the labels where flip_mask is True
-    # Since Y ∈ {-1, 1}, flipping means multiplying by -1
-    Z[flip_mask] = -Z[flip_mask]
-    
-    return Z, eta_values
+    # Sample Y=+1 with probability f(X), else Y=-1
+    return np.where(np.random.rand(m) < probs, 1, -1)
 
 
-def eta_function(X, noise_type='linear'):
+def generate_Z(X, Y):
     """
-    Compute the noise function η(X).
+    Corrupt labels Y into observed labels Z.
+    Each label flips with probability eta(X).
     
     Args:
-        X: array of shape (n, d)
-        noise_type: type of noise ('linear' or 'sine')
-        
+        X: array of shape (m, d)
+        Y: array of shape (m,) - true labels
+    
     Returns:
-        eta: array of shape (n,) with values in [0, 0.5[
+        Z: array of shape (m,) - noisy labels in {-1, +1}
     """
-    if noise_type == 'linear':
-        # Linear noise: η varies from 0.0 to 0.4 based on X[0]
-        # Normalize X[0] to [0, 1]
-        x_normalized = (X[:, 0] - X[:, 0].min()) / (X[:, 0].max() - X[:, 0].min())
-        # Scale to [0, 0.4]
-        return 0.4 * x_normalized
+    m = X.shape[0]
+    noise_probs = eta_function(X)
     
-    elif noise_type == 'sine':
-        # Sinusoidal noise: η(x) = 0.2 + 0.15 * sin(2 * X[0])
-        eta = 0.2 + 0.15 * np.sin(2 * X[:, 0])
-        # Clip to ensure η ∈ [0, 0.5[
-        return np.clip(eta, 0, 0.49)
-    
-    else:
-        raise ValueError(f"Unknown noise type: {noise_type}. Use 'linear' or 'sine'.")
+    # Flip label with probability eta(X)
+    flip = np.random.rand(m) < noise_probs
+    return np.where(flip, -Y, Y)
 
 
-def generate_data(n, d=1, noise_type='linear'):
+def generate_data(m, d):
     """
-    Generate a complete dataset (X, Y, Z, eta_true).
-    
-    This is a convenience function that combines all generation steps.
+    Generate complete synthetic dataset.
     
     Args:
-        n: number of observations
-        d: dimension of feature space
-        noise_type: type of noise function ('linear', 'sine')
-        
-    Returns:
-        X: array of shape (n, d) - features
-        Y: array of shape (n,) - true labels {-1, 1}
-        Z: array of shape (n,) - corrupted labels {-1, 1}
-        eta_true: array of shape (n,) - true noise values η(X)
-    """
-    # Step 1: Generate features X ~ N(0, I_d)
-    X = generate_X(n, d)
+        m: number of samples
+        d: feature dimension
     
-    # Step 2: Generate true labels Y ∈ {-1, 1} (deterministic given X)
+    Returns:
+        X: features, shape (m, d)
+        Y: true labels, shape (m,)
+        Z: noisy labels, shape (m,)
+    
+    Example:
+        >>> np.random.seed(42)
+        >>> X, Y, Z = generate_data(1000, 2)
+        >>> print(f"Corruption rate: {np.mean(Y != Z):.2%}")
+    """
+    X = generate_X(m, d)
     Y = generate_Y(X)
+    Z = generate_Z(X, Y)
     
-    # Step 3: Generate corrupted labels Z by flipping Y with probability η(X)
-    Z, eta_true = generate_Z(X, Y, noise_type=noise_type)
-    
-    return X, Y, Z, eta_true
+    return X, Y, Z
