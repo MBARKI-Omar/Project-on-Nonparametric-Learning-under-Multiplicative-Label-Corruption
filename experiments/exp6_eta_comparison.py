@@ -14,49 +14,48 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from src.data_generation import generate_data, eta_function
 from src.estimator import estimate_eta
 
+
 def run_experiment():
-    """Compare true eta vs estimated eta directly."""
+    """Compare true eta vs estimated eta directly over multiple periods."""
     print("=" * 60)
     print("Experiment 6: True vs Estimated Eta Comparison")
     print("=" * 60)
     
     np.random.seed(42)
     
-    # Generate data over MULTIPLE periods
-    m, d = 2000, 1  # Use 1D for clear sinusoid visualization
+    # Generate data in standard [0, 1] range
+    m, d = 2000, 1
     noise_level = 'medium'
     
     print(f"\nGenerating data: m={m}, d={d}, noise_level={noise_level}")
+    X, Y, Z = generate_data(m, d, noise_level=noise_level)
     
-    # Generate X over 3 periods: [0, 3] instead of [0, 1]
-    X = np.random.uniform(0, 3, size=(m, d))
+    # Create test grid: replicate [0,1] pattern 3 times for visualization
+    n_periods = 3
+    n_points_per_period = 100
+    X_test_single = np.linspace(0, 1, n_points_per_period).reshape(-1, 1)
     
-    # Generate Y (using standard f_function on normalized x)
-    from src.data_generation import f_function, generate_Z
-    X_normalized = X / 3.0  # Normalize to [0,1] for f_function
-    probs = f_function(X_normalized)
-    Y = np.where(np.random.rand(m) < probs, 1, -1)
+    # Replicate pattern 3 times
+    X_test_list = []
+    x_axis_list = []
     
-    # Generate Z with eta over 3 periods
-    def eta_3periods(x):
-        """Eta function over 3 periods."""
-        return 0.20 + 0.15 * np.sin(np.pi * x.ravel())  # One full period in [0,3]
+    for period in range(n_periods):
+        X_test_list.append(X_test_single)
+        x_axis_list.append(X_test_single[:, 0] + period)
     
-    noise_probs = eta_3periods(X)
-    flip = np.random.rand(m) < noise_probs
-    Z = np.where(flip, -Y, Y)
+    X_test = np.vstack(X_test_list)
+    x_axis = np.concatenate(x_axis_list)
     
-    # Create test grid over 3 periods
-    X_test = np.linspace(0, 3, 300).reshape(-1, 1)
+    # Compute true eta (same for all periods since pattern repeats)
+    eta_true_single = eta_function(X_test_single, noise_level=noise_level)
+    eta_true_test = np.tile(eta_true_single, n_periods)
     
-    # Compute true eta on test points
-    eta_true_test = eta_3periods(X_test)
-    
-    # Estimate eta
+    # Estimate eta (same pattern repeated)
     print("Estimating eta...")
-    eta_pred_test = estimate_eta(X, Z, X_test, h=None, threshold=0.3)
+    eta_pred_single = estimate_eta(X, Z, X_test_single, h=None, threshold=0.3)
+    eta_pred_test = np.tile(eta_pred_single, n_periods)
     
-    # Statistics
+    # Statistics on identifiable points
     mask = ~np.isnan(eta_pred_test)
     if np.sum(mask) > 0:
         mse = np.mean((eta_true_test[mask] - eta_pred_test[mask])**2)
@@ -65,27 +64,47 @@ def run_experiment():
         print(f"  MSE: {mse:.6f}")
         print(f"  MAE: {mae:.6f}")
         print(f"  Identifiable: {np.mean(mask):.1%}")
-    
-    # Print actual values at a few points
-    print("\nSample comparisons (evenly spaced points):")
-    print("  x     | True η | Estimated η | Error")
-    indices = np.linspace(0, len(X_test)-1, 10, dtype=int)
-    for i in indices:
-        if not np.isnan(eta_pred_test[i]):
-            error = eta_pred_test[i] - eta_true_test[i]
-            print(f"  {X_test[i,0]:.2f} | {eta_true_test[i]:.4f} | {eta_pred_test[i]:.4f}   | {error:+.4f}")
+        
+        # Check if estimator tracks well
+        if mse < 0.001:
+            quality = "EXCELLENT"
+        elif mse < 0.005:
+            quality = "GOOD"
+        elif mse < 0.01:
+            quality = "MODERATE"
         else:
-            print(f"  {X_test[i,0]:.2f} | {eta_true_test[i]:.4f} | NaN       | NaN")
+            quality = "POOR"
+        print(f"  Quality: {quality}")
+    else:
+        print("\n⚠️  No identifiable points!")
+        mse = np.nan
+        quality = "FAILED"
+    
+    # Print sample values
+    print("\nSample comparisons (one per period):")
+    print("  Period | x    | True η | Est η  | Error")
+    print("  " + "-" * 50)
+    sample_indices = [25, 125, 225]  # Middle of each period
+    for idx in sample_indices:
+        period = idx // n_points_per_period
+        x_val = x_axis[idx]
+        eta_true_val = eta_true_test[idx]
+        eta_pred_val = eta_pred_test[idx]
+        
+        if not np.isnan(eta_pred_val):
+            error = eta_pred_val - eta_true_val
+            print(f"  {period}      | {x_val:.2f} | {eta_true_val:.4f} | {eta_pred_val:.4f} | {error:+.4f}")
+        else:
+            print(f"  {period}      | {x_val:.2f} | {eta_true_val:.4f} | NaN    | NaN")
     
     # Visualization
     os.makedirs('reports/figures', exist_ok=True)
     
     fig, ax = plt.subplots(figsize=(14, 6))
     
-    x_axis = X_test[:, 0]
-    
-    # Plot true function (smooth sinusoid over 3 periods)
-    ax.plot(x_axis, eta_true_test, 'b-', linewidth=3, label='True η(x) = 0.20 + 0.15·sin(πx)', alpha=0.8)
+    # Plot true function (smooth sinusoid)
+    ax.plot(x_axis, eta_true_test, 'b-', linewidth=3, 
+            label='True η(x) = 0.20 + 0.15·sin(πx)', alpha=0.8)
     
     # Plot estimated values (only non-NaN)
     mask = ~np.isnan(eta_pred_test)
@@ -97,20 +116,27 @@ def run_experiment():
         ax.plot(x_axis[~mask], eta_true_test[~mask], 'rx', markersize=6,
                 label='Non-identifiable', alpha=0.5)
     
-    # Show training data distribution (rug plot at bottom)
-    ax.scatter(X[:, 0], np.zeros(m) + 0.03, c='lightgray', s=1, alpha=0.3, 
-              label='Training points', marker='|')
+    # Show training data distribution (rug plot)
+    X_train_extended = X[:, 0]
+    for period in range(n_periods):
+        ax.scatter(X_train_extended + period, np.zeros(len(X_train_extended)) + 0.03, 
+                  c='lightgray', s=1, alpha=0.2, marker='|')
     
-    # Mark periods
+    # Mark period boundaries
     for period in [1, 2]:
         ax.axvline(period, color='gray', linestyle='--', alpha=0.3, linewidth=1)
     
-    ax.set_xlabel('x (over 3 periods)', fontsize=12)
+    # Add text annotation with quality
+    ax.text(0.02, 0.98, f'MSE = {mse:.6f}\nQuality: {quality}', 
+            transform=ax.transAxes, fontsize=11, verticalalignment='top',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    ax.set_xlabel('x (3 periods of the pattern)', fontsize=12)
     ax.set_ylabel('η(x)', fontsize=12)
-    ax.set_title('Sinusoidal Noise Function: True vs Estimated (3 periods)', fontsize=14)
-    ax.set_xlim(0, 3)
+    ax.set_title('Sinusoidal Noise: True vs Estimated (Pattern repeated 3 times)', fontsize=14)
+    ax.set_xlim(0, n_periods)
     ax.set_ylim(0, 0.4)
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=11, loc='upper right')
     ax.grid(alpha=0.3)
     
     plt.tight_layout()
@@ -123,14 +149,22 @@ def run_experiment():
     print("Experiment 6 completed!")
     print("=" * 60)
     print("\nDIAGNOSTIC:")
-    if np.sum(mask) > 0 and mse < 0.001:
-        print("✅ Estimator tracks sinusoid well (MSE < 0.001)")
-    elif np.sum(mask) > 0 and mse < 0.01:
-        print("⚠️  Estimator has moderate error (0.001 < MSE < 0.01)")
-    elif np.sum(mask) > 0:
-        print(f"❌ Estimator does NOT track sinusoid (MSE = {mse:.4f})")
+    if quality == "EXCELLENT":
+        print("✅ Estimator tracks the sinusoid PERFECTLY")
+        print("   → Your method works well!")
+    elif quality == "GOOD":
+        print("✅ Estimator tracks the sinusoid WELL")
+        print("   → Your method is solid")
+    elif quality == "MODERATE":
+        print("⚠️  Estimator has moderate tracking error")
+        print("   → Method works but has room for improvement")
+    elif quality == "POOR":
+        print("❌ Estimator does NOT track the sinusoid well")
+        print("   → There may be an implementation issue")
     else:
-        print("❌ No identifiable points - threshold too high or data issue")
+        print("❌ Estimator failed completely")
+        print("   → Check threshold or implementation")
+
 
 if __name__ == "__main__":
     run_experiment()
