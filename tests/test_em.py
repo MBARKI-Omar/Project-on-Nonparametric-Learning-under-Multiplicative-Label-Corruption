@@ -5,6 +5,11 @@ Main visual test for the EM Estimator using Cross-Validation.
 Displays both Linear and Sine noise cases side-by-side.
 """
 
+import sys
+import os
+# Add project root to Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import numpy as np
 import matplotlib.pyplot as plt
 from src.data_generation import generate_data, eta_function
