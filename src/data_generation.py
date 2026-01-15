@@ -6,12 +6,17 @@ Creates synthetic datasets where we know the true noise function.
 import numpy as np
 
 
-def eta_function(X):
+def eta_function(X, noise_level='medium'):
     """
     True noise function: probability of label flip at each point.
     
     Args:
         X: array of shape (m, d) - feature vectors
+        noise_level: 'low', 'medium', 'high', or 'default'
+            - 'low': η ∈ [0.02, 0.12]
+            - 'medium': η ∈ [0.05, 0.35]
+            - 'high': η ∈ [0.20, 0.45]
+            - 'default': η ∈ [0.00, 0.45] (covers full range)
     
     Returns:
         array of shape (m,) - noise rates in [0, 0.5)
@@ -19,13 +24,21 @@ def eta_function(X):
     if X.ndim == 1:
         X = X.reshape(-1, 1)
     
+    # Compute base variation (normalized to [-1, 1])
     if X.shape[1] == 1:
-        # 1D: varies between 0.05 and 0.35
-        return 0.2 + 0.15 * np.sin(np.pi * X[:, 0])
+        base = np.sin(np.pi * X[:, 0])
     else:
-        # 2D+: adjust coefficients to stay positive
-        # Range: [0.05, 0.35]
-        return 0.2 + 0.08 * np.sin(2 * np.pi * X[:, 0]) + 0.07 * np.cos(2 * np.pi * X[:, 1])
+        base = 0.5 * np.sin(2 * np.pi * X[:, 0]) + 0.5 * np.cos(2 * np.pi * X[:, 1])
+    
+    # Scale according to noise level
+    if noise_level == 'low':
+        return 0.07 + 0.05 * base  # [0.02, 0.12]
+    elif noise_level == 'medium':
+        return 0.20 + 0.15 * base  # [0.05, 0.35]
+    elif noise_level == 'high':
+        return 0.325 + 0.125 * base  # [0.20, 0.45]
+    else:  # 'default'
+        return 0.225 + 0.225 * base  # [0.00, 0.45]
 
 
 def f_function(X):
@@ -84,7 +97,7 @@ def generate_Y(X):
     return np.where(np.random.rand(m) < probs, 1, -1)
 
 
-def generate_Z(X, Y):
+def generate_Z(X, Y, noise_level='medium'):
     """
     Corrupt labels Y into observed labels Z.
     Each label flips with probability eta(X).
@@ -92,25 +105,27 @@ def generate_Z(X, Y):
     Args:
         X: array of shape (m, d)
         Y: array of shape (m,) - true labels
+        noise_level: noise level to use ('low', 'medium', 'high', 'default')
     
     Returns:
         Z: array of shape (m,) - noisy labels in {-1, +1}
     """
     m = X.shape[0]
-    noise_probs = eta_function(X)
+    noise_probs = eta_function(X, noise_level=noise_level)
     
     # Flip label with probability eta(X)
     flip = np.random.rand(m) < noise_probs
     return np.where(flip, -Y, Y)
 
 
-def generate_data(m, d):
+def generate_data(m, d, noise_level='default'):
     """
     Generate complete synthetic dataset.
     
     Args:
         m: number of samples
         d: feature dimension
+        noise_level: 'low', 'medium', 'high', or 'default'
     
     Returns:
         X: features, shape (m, d)
@@ -119,11 +134,11 @@ def generate_data(m, d):
     
     Example:
         >>> np.random.seed(42)
-        >>> X, Y, Z = generate_data(1000, 2)
+        >>> X, Y, Z = generate_data(1000, 2, noise_level='high')
         >>> print(f"Corruption rate: {np.mean(Y != Z):.2%}")
     """
     X = generate_X(m, d)
     Y = generate_Y(X)
-    Z = generate_Z(X, Y)
+    Z = generate_Z(X, Y, noise_level=noise_level)
     
     return X, Y, Z

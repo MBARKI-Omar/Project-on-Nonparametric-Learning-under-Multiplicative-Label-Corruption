@@ -49,11 +49,15 @@ def nadaraya_watson(X_train, Z_train, X_test, h):
         X_train: training features, shape (m, d)
         Z_train: training labels, shape (m,)
         X_test: test points, shape (n, d)
-        h: bandwidth
+        h: bandwidth (can be None for auto-selection)
     
     Returns:
         r_hat: predictions, shape (n,)
     """
+    # Auto-select bandwidth if needed
+    if h is None:
+        h = silverman_bandwidth(X_train)
+    
     m_test = X_test.shape[0]
     r_hat = np.zeros(m_test)
     

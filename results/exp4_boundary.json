@@ -1,0 +1,10 @@
+{
+  "scenario_A": {
+    "mse": 0.006050249782397194,
+    "identifiable_rate": 0.65
+  },
+  "scenario_B": {
+    "mse": 0.020431695001551058,
+    "identifiable_rate": 0.0988
+  }
+}

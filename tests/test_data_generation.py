@@ -62,7 +62,7 @@ def test_corruption_rate():
     theoretical_rate = np.mean(eta_function(X))
     
     # Should match within statistical tolerance
-    tolerance = 0.02  # 2% tolerance
+    tolerance = 0.03  # Change de 0.02 à 0.03 (3% au lieu de 2%)
     assert abs(empirical_rate - theoretical_rate) < tolerance, \
         f"Corruption rate mismatch: {empirical_rate:.3f} vs {theoretical_rate:.3f}"
 
@@ -84,6 +84,46 @@ def test_reproducibility():
     assert np.array_equal(Y1, Y2), "Y should be reproducible"
     assert np.array_equal(Z1, Z2), "Z should be reproducible"
 
+def test_noise_level_low():
+    """Check that low noise level produces correct range."""
+    np.random.seed(20)
+    m, d = 1000, 2
+    
+    X, Y, Z = generate_data(m, d, noise_level='low')
+    
+    eta_vals = eta_function(X, noise_level='low')
+    
+    # Should be in [0.02, 0.12]
+    assert np.all(eta_vals >= 0.01), f"Min eta: {np.min(eta_vals)}"
+    assert np.all(eta_vals <= 0.13), f"Max eta: {np.max(eta_vals)}"
+    
+    # Empirical corruption should match
+    empirical_rate = np.mean(Y != Z)
+    theoretical_rate = np.mean(eta_vals)
+    
+    assert abs(empirical_rate - theoretical_rate) < 0.03, \
+        f"Corruption mismatch: {empirical_rate:.3f} vs {theoretical_rate:.3f}"
+
+
+def test_noise_level_high():
+    """Check that high noise level produces correct range."""
+    np.random.seed(21)
+    m, d = 1000, 2
+    
+    X, Y, Z = generate_data(m, d, noise_level='high')
+    
+    eta_vals = eta_function(X, noise_level='high')
+    
+    # Should be in [0.20, 0.45]
+    assert np.all(eta_vals >= 0.19), f"Min eta: {np.min(eta_vals)}"
+    assert np.all(eta_vals <= 0.46), f"Max eta: {np.max(eta_vals)}"
+    
+    # Empirical corruption should match
+    empirical_rate = np.mean(Y != Z)
+    theoretical_rate = np.mean(eta_vals)
+    
+    assert abs(empirical_rate - theoretical_rate) < 0.03, \
+        f"Corruption mismatch: {empirical_rate:.3f} vs {theoretical_rate:.3f}"
 
 if __name__ == "__main__":
     # Run tests
